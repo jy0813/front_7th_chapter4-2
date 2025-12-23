@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react-swc';
 export default mergeConfig(
   defineConfig({
     plugins: [react()],
-    base: process.env.VITE_BASE_PATH || '/',
+    base: '/front_7th_chapter4-2/',
   }),
   defineTestConfig({
     test: {
