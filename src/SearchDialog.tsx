@@ -32,7 +32,7 @@ import {
 import { useScheduleContext } from './ScheduleContext.tsx';
 import { Lecture } from './types.ts';
 import { parseSchedule } from './utils.ts';
-import axios from 'axios';
+import { getAllLectures } from './api.ts';
 import { DAY_LABELS } from './constants.ts';
 
 interface Props {
@@ -81,49 +81,6 @@ const TIME_SLOTS = [
 ];
 
 const PAGE_SIZE = 100;
-
-const fetchMajors = () => axios.get<Lecture[]>('./schedules-majors.json');
-const fetchLiberalArts = () =>
-  axios.get<Lecture[]>('./schedules-liberal-arts.json');
-
-function createCachedFetcher<T>(fetcher: () => Promise<T>) {
-  let cache: Promise<T> | null = null;
-
-  return () => {
-    if (!cache) {
-      cache = fetcher();
-    }
-    return cache;
-  };
-}
-
-const cachedFetchMajors = createCachedFetcher<Lecture[]>(() =>
-  fetchMajors().then((res) => res.data),
-);
-
-const cachedFetchLiberalArts = createCachedFetcher<Lecture[]>(() =>
-  fetchLiberalArts().then((res) => res.data),
-);
-
-const cachedFetchAllLectures = async () => {
-  const [majors, liberalArts] = await Promise.all([
-    cachedFetchMajors(),
-    cachedFetchLiberalArts(),
-  ]);
-  return [...majors, ...liberalArts];
-};
-
-// // TODO: 이 코드를 개선해서 API 호출을 최소화 해보세요 + Promise.all이 현재 잘못 사용되고 있습니다. 같이 개선해주세요.
-// // 완료된 코드는 위의 cachedFetchAllLectures 함수입니다.
-// const fetchAllLectures = async () =>
-//   await Promise.all([
-//     (console.log('API Call 1', performance.now()), await fetchMajors()),
-//     (console.log('API Call 2', performance.now()), await fetchLiberalArts()),
-//     (console.log('API Call 3', performance.now()), await fetchMajors()),
-//     (console.log('API Call 4', performance.now()), await fetchLiberalArts()),
-//     (console.log('API Call 5', performance.now()), await fetchMajors()),
-//     (console.log('API Call 6', performance.now()), await fetchLiberalArts()),
-//   ]);
 
 // TODO: 이 컴포넌트에서 불필요한 연산이 발생하지 않도록 다양한 방식으로 시도해주세요.
 const SearchDialog = ({ searchInfo, onClose }: Props) => {
@@ -215,16 +172,10 @@ const SearchDialog = ({ searchInfo, onClose }: Props) => {
   useEffect(() => {
     const start = performance.now();
     console.log('API 호출 시작: ', start);
-    // fetchAllLectures().then((results) => {
-    //   const end = performance.now();
-    //   console.log('모든 API 호출 완료 ', end);
-    //   console.log('API 호출에 걸린 시간(ms): ', end - start);
-    //   setLectures(results.flatMap((result) => result.data));
-    // });
-    cachedFetchAllLectures().then((allLectures) => {
+    getAllLectures().then((allLectures) => {
       const end = performance.now();
-      console.log('캐시된 모든 API 호출 완료 ', end);
-      console.log('캐시된 API 호출에 걸린 시간(ms): ', end - start);
+      console.log('모든 API 호출 완료: ', end);
+      console.log('API 호출에 걸린 시간(ms): ', end - start);
       setLectures(allLectures);
     });
   }, []);
