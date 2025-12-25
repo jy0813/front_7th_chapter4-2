@@ -9,7 +9,7 @@ import {
   Text,
   VStack,
 } from '@chakra-ui/react';
-import { useScheduleContext } from '../../ScheduleContext.tsx';
+import { useScheduleContext } from '../../context';
 import { Lecture } from '../../types.ts';
 import { parseSchedule } from '../../utils.ts';
 import useAutoCallback from '../../hooks/useAutoCallback';

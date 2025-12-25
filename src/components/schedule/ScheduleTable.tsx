@@ -1,17 +1,75 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { Box } from '@chakra-ui/react';
 import { Schedule } from '../../types';
 import useAutoCallback from '../../hooks/useAutoCallback';
-import useScheduleColor from '../../hooks/useScheduleColor';
 import useActiveTableId from '../../hooks/useActiveTableId';
 import ScheduleGrid from './ScheduleGrid';
 import DraggableSchedule from './DraggableSchedule';
 
+// 색상 팔레트
+const COLORS = ['#fdd', '#ffd', '#dff', '#ddf', '#fdf', '#dfd'];
+
+// Presenter - memo 보호, Context 없음
+interface PresenterProps {
+  tableId: string;
+  schedules: Schedule[];
+  colorMap: Map<string, string>;
+  isActive: boolean;
+  onCellClick: (day: string, time: number) => void;
+  onDelete: (day: string, time: number) => void;
+}
+
+const ScheduleTablePresenter = memo(
+  ({
+    tableId,
+    schedules,
+    colorMap,
+    isActive,
+    onCellClick,
+    onDelete,
+  }: PresenterProps) => {
+    return (
+      <Box
+        position="relative"
+        outline={isActive ? '5px dashed' : undefined}
+        outlineColor="blue.300"
+      >
+        <ScheduleGrid onCellClick={onCellClick} />
+
+        {schedules.map((schedule, index) => (
+          <DraggableSchedule
+            key={`${schedule.lecture.id}-${schedule.day}-${schedule.range[0]}`}
+            id={`${tableId}:${index}`}
+            schedule={schedule}
+            bg={colorMap.get(schedule.lecture.id) || COLORS[0]}
+            onDelete={onDelete}
+            day={schedule.day}
+            time={schedule.range[0]}
+          />
+        ))}
+      </Box>
+    );
+  },
+  (prev, next) => {
+    if (prev.tableId !== next.tableId) return false;
+    if (prev.isActive !== next.isActive) return false;
+    // 참조 비교 우선 - 배열 참조가 같으면 내용도 같음
+    if (prev.schedules === next.schedules && prev.colorMap === next.colorMap) {
+      return true;
+    }
+    // 참조가 다르면 내용 비교
+    if (prev.colorMap !== next.colorMap) return false;
+    if (prev.schedules.length !== next.schedules.length) return false;
+    return prev.schedules.every((s, i) => s === next.schedules[i]);
+  },
+);
+
+// Wrapper - Context 구독 담당
 interface ScheduleTableProps {
   tableId: string;
   schedules: Schedule[];
-  onScheduleTimeClick: (timeInfo: { day: string; time: number }) => void;
-  onDeleteButtonClick: (timeInfo: { day: string; time: number }) => void;
+  onScheduleTimeClick: (day: string, time: number) => void;
+  onDeleteButtonClick: (day: string, time: number) => void;
 }
 
 const ScheduleTable = memo(
@@ -21,49 +79,40 @@ const ScheduleTable = memo(
     onScheduleTimeClick,
     onDeleteButtonClick,
   }: ScheduleTableProps) => {
-    // 커스텀 훅 사용
-    const getColor = useScheduleColor(schedules);
+    // Context 구독 - Wrapper에서만
     const activeTableId = useActiveTableId();
 
-    // 셀 클릭 핸들러
+    // 색상 맵 메모이제이션
+    const colorMap = useMemo(() => {
+      const lectureIds = [...new Set(schedules.map((s) => s.lecture.id))];
+      return new Map(
+        lectureIds.map((id, i) => [id, COLORS[i % COLORS.length]]),
+      );
+    }, [schedules]);
+
+    // 핸들러
     const handleCellClick = useAutoCallback((day: string, time: number) => {
-      onScheduleTimeClick({ day, time });
+      onScheduleTimeClick(day, time);
     });
 
-    // 삭제 핸들러
     const handleDelete = useAutoCallback((day: string, time: number) => {
-      onDeleteButtonClick({ day, time });
+      onDeleteButtonClick(day, time);
     });
 
     return (
-      <Box
-        position="relative"
-        outline={activeTableId === tableId ? '5px dashed' : undefined}
-        outlineColor="blue.300"
-      >
-        <ScheduleGrid onCellClick={handleCellClick} />
-
-        {schedules.map((schedule, index) => (
-          <DraggableSchedule
-            key={`${schedule.lecture.id}-${schedule.day}-${schedule.range[0]}`}
-            id={`${tableId}:${index}`}
-            schedule={schedule}
-            bg={getColor(schedule.lecture.id)}
-            onDelete={() => handleDelete(schedule.day, schedule.range[0])}
-          />
-        ))}
-      </Box>
+      <ScheduleTablePresenter
+        tableId={tableId}
+        schedules={schedules}
+        colorMap={colorMap}
+        isActive={activeTableId === tableId}
+        onCellClick={handleCellClick}
+        onDelete={handleDelete}
+      />
     );
   },
-  (prevProps, nextProps) => {
-    if (prevProps.tableId !== nextProps.tableId) return false;
-    if (prevProps.schedules.length !== nextProps.schedules.length) return false;
-    return prevProps.schedules.every(
-      (s, i) =>
-        s.lecture.id === nextProps.schedules[i]?.lecture.id &&
-        s.day === nextProps.schedules[i]?.day &&
-        s.range[0] === nextProps.schedules[i]?.range[0],
-    );
+  (prev, next) => {
+    // 참조 비교 우선!
+    return prev.tableId === next.tableId && prev.schedules === next.schedules;
   },
 );
 

@@ -1,9 +1,11 @@
-import { memo, useState } from 'react';
-import { Flex } from '@chakra-ui/react';
-import { useScheduleContext } from '../../ScheduleContext';
+import { memo, useState, lazy, Suspense, useMemo } from 'react';
+import { Flex, Spinner, Center } from '@chakra-ui/react';
+import { useSchedulesMap } from '../../context';
 import useAutoCallback from '../../hooks/useAutoCallback';
 import ScheduleTableItem from './ScheduleTableItem';
-import SearchDialog from '../searchDialog/SearchDialog';
+
+// SearchDialog lazy loading
+const SearchDialog = lazy(() => import('../searchDialog/SearchDialog'));
 
 interface SearchInfo {
   tableId: string;
@@ -12,47 +14,19 @@ interface SearchInfo {
 }
 
 const ScheduleTables = memo(() => {
-  const { schedulesMap, setSchedulesMap } = useScheduleContext();
+  // schedulesMap 전체 구독 - 여기서만 State Context 구독!
+  const schedulesMap = useSchedulesMap();
+
+  // tableIds와 tableCount를 메모이제이션
+  const tableIds = useMemo(() => Object.keys(schedulesMap), [schedulesMap]);
+  const tableCount = tableIds.length;
+
   const [searchInfo, setSearchInfo] = useState<SearchInfo | null>(null);
 
-  const disabledRemoveButton = Object.keys(schedulesMap).length === 1;
-
-  const handleDuplicate = useAutoCallback((targetId: string) => {
-    setSchedulesMap((prev) => ({
-      ...prev,
-      [`schedule-${Date.now()}`]: [...prev[targetId]],
-    }));
+  // 안정적인 콜백 - tableId를 인자로 받음 (인라인 함수 제거)
+  const handleOpenSearch = useAutoCallback((tableId: string, day?: string, time?: number) => {
+    setSearchInfo({ tableId, day, time });
   });
-
-  const handleRemove = useAutoCallback((targetId: string) => {
-    setSchedulesMap((prev) => {
-      const newMap = { ...prev };
-      delete newMap[targetId];
-      return newMap;
-    });
-  });
-
-  const handleAddClick = useAutoCallback((tableId: string) => {
-    setSearchInfo({ tableId });
-  });
-
-  const handleScheduleTimeClick = useAutoCallback(
-    (tableId: string, timeInfo: { day: string; time: number }) => {
-      setSearchInfo({ tableId, ...timeInfo });
-    },
-  );
-
-  const handleDeleteSchedule = useAutoCallback(
-    (tableId: string, { day, time }: { day: string; time: number }) => {
-      setSchedulesMap((prev) => ({
-        ...prev,
-        [tableId]: prev[tableId].filter(
-          (schedule) =>
-            schedule.day !== day || !schedule.range.includes(time),
-        ),
-      }));
-    },
-  );
 
   const handleCloseDialog = useAutoCallback(() => {
     setSearchInfo(null);
@@ -61,27 +35,27 @@ const ScheduleTables = memo(() => {
   return (
     <>
       <Flex w="full" gap={6} p={6} flexWrap="wrap">
-        {Object.entries(schedulesMap).map(([tableId, schedules], index) => (
+        {tableIds.map((tableId, index) => (
           <ScheduleTableItem
             key={tableId}
             tableId={tableId}
-            schedules={schedules}
+            schedules={schedulesMap[tableId]}
             index={index}
-            disabledRemove={disabledRemoveButton}
-            onAddClick={() => handleAddClick(tableId)}
-            onDuplicateClick={() => handleDuplicate(tableId)}
-            onRemoveClick={() => handleRemove(tableId)}
-            onScheduleTimeClick={(timeInfo) =>
-              handleScheduleTimeClick(tableId, timeInfo)
-            }
-            onDeleteSchedule={(timeInfo) =>
-              handleDeleteSchedule(tableId, timeInfo)
-            }
+            disabledRemove={tableCount === 1}
+            onOpenSearch={handleOpenSearch}
           />
         ))}
       </Flex>
       {searchInfo && (
-        <SearchDialog searchInfo={searchInfo} onClose={handleCloseDialog} />
+        <Suspense
+          fallback={
+            <Center position="fixed" inset={0} bg="blackAlpha.500" zIndex={1000}>
+              <Spinner size="xl" color="white" />
+            </Center>
+          }
+        >
+          <SearchDialog searchInfo={searchInfo} onClose={handleCloseDialog} />
+        </Suspense>
       )}
     </>
   );

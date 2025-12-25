@@ -6,20 +6,95 @@ import {
   Heading,
   Stack,
 } from '@chakra-ui/react';
+import { useScheduleActions } from '../../context';
 import { Schedule } from '../../types';
 import useAutoCallback from '../../hooks/useAutoCallback';
 import ScheduleTable from './ScheduleTable';
 
+// ============================================
+// 1. ScheduleTableTitle - 제목만 (index 변경 시만 리렌더)
+// ============================================
+interface TitleProps {
+  index: number;
+}
+
+const ScheduleTableTitle = memo(
+  ({ index }: TitleProps) => (
+    <Heading as="h3" fontSize="lg">
+      시간표 {index + 1}
+    </Heading>
+  ),
+  (prev, next) => prev.index === next.index
+);
+
+// ============================================
+// 2. ScheduleTableActions - 버튼 그룹 (disabledRemove 변경 시만 리렌더)
+// ============================================
+interface ActionsProps {
+  disabledRemove: boolean;
+  onAddClick: () => void;
+  onDuplicateClick: () => void;
+  onRemoveClick: () => void;
+}
+
+const ScheduleTableActions = memo(
+  ({ disabledRemove, onAddClick, onDuplicateClick, onRemoveClick }: ActionsProps) => (
+    <ButtonGroup size="sm" isAttached>
+      <Button colorScheme="green" onClick={onAddClick}>
+        시간표 추가
+      </Button>
+      <Button colorScheme="green" mx="1px" onClick={onDuplicateClick}>
+        복제
+      </Button>
+      <Button
+        colorScheme="green"
+        isDisabled={disabledRemove}
+        onClick={onRemoveClick}
+      >
+        삭제
+      </Button>
+    </ButtonGroup>
+  ),
+  (prev, next) => prev.disabledRemove === next.disabledRemove
+);
+
+// ============================================
+// 3. ScheduleTableBody - 시간표 본문 (schedules 참조 비교로 리렌더 결정)
+// ============================================
+interface BodyProps {
+  tableId: string;
+  schedules: Schedule[];
+  onScheduleTimeClick: (day: string, time: number) => void;
+  onDeleteButtonClick: (day: string, time: number) => void;
+}
+
+const ScheduleTableBody = memo(
+  ({ tableId, schedules, onScheduleTimeClick, onDeleteButtonClick }: BodyProps) => {
+    // Context 구독 제거! schedules를 props로 받음
+    return (
+      <ScheduleTable
+        tableId={tableId}
+        schedules={schedules}
+        onScheduleTimeClick={onScheduleTimeClick}
+        onDeleteButtonClick={onDeleteButtonClick}
+      />
+    );
+  },
+  (prev, next) => {
+    // 참조 비교 - 배열 참조가 같으면 리렌더링 안 함!
+    return prev.tableId === next.tableId && prev.schedules === next.schedules;
+  }
+);
+
+// ============================================
+// 4. ScheduleTableItem - Wrapper (조합만 담당)
+// ============================================
 interface ScheduleTableItemProps {
   tableId: string;
   schedules: Schedule[];
   index: number;
   disabledRemove: boolean;
-  onAddClick: () => void;
-  onDuplicateClick: () => void;
-  onRemoveClick: () => void;
-  onScheduleTimeClick: (timeInfo: { day: string; time: number }) => void;
-  onDeleteSchedule: (timeInfo: { day: string; time: number }) => void;
+  onOpenSearch: (tableId: string, day?: string, time?: number) => void;
 }
 
 const ScheduleTableItem = memo(
@@ -28,47 +103,48 @@ const ScheduleTableItem = memo(
     schedules,
     index,
     disabledRemove,
-    onAddClick,
-    onDuplicateClick,
-    onRemoveClick,
-    onScheduleTimeClick,
-    onDeleteSchedule,
+    onOpenSearch,
   }: ScheduleTableItemProps) => {
+    // 액션들 (안정적 참조) - Dispatch Context만 구독!
+    const { duplicateTable, removeTable, deleteSchedule } = useScheduleActions();
+
+    // 핸들러들 - tableId 바인딩
+    const handleAddClick = useAutoCallback(() => {
+      onOpenSearch(tableId);
+    });
+
+    const handleDuplicateClick = useAutoCallback(() => {
+      duplicateTable(tableId);
+    });
+
+    const handleRemoveClick = useAutoCallback(() => {
+      removeTable(tableId);
+    });
+
     const handleScheduleTimeClick = useAutoCallback(
-      (timeInfo: { day: string; time: number }) => {
-        onScheduleTimeClick(timeInfo);
-      },
+      (day: string, time: number) => {
+        onOpenSearch(tableId, day, time);
+      }
     );
 
     const handleDeleteSchedule = useAutoCallback(
-      (timeInfo: { day: string; time: number }) => {
-        onDeleteSchedule(timeInfo);
-      },
+      (day: string, time: number) => {
+        deleteSchedule(tableId, day, time);
+      }
     );
 
     return (
       <Stack width="600px">
         <Flex justifyContent="space-between" alignItems="center">
-          <Heading as="h3" fontSize="lg">
-            시간표 {index + 1}
-          </Heading>
-          <ButtonGroup size="sm" isAttached>
-            <Button colorScheme="green" onClick={onAddClick}>
-              시간표 추가
-            </Button>
-            <Button colorScheme="green" mx="1px" onClick={onDuplicateClick}>
-              복제
-            </Button>
-            <Button
-              colorScheme="green"
-              isDisabled={disabledRemove}
-              onClick={onRemoveClick}
-            >
-              삭제
-            </Button>
-          </ButtonGroup>
+          <ScheduleTableTitle index={index} />
+          <ScheduleTableActions
+            disabledRemove={disabledRemove}
+            onAddClick={handleAddClick}
+            onDuplicateClick={handleDuplicateClick}
+            onRemoveClick={handleRemoveClick}
+          />
         </Flex>
-        <ScheduleTable
+        <ScheduleTableBody
           tableId={tableId}
           schedules={schedules}
           onScheduleTimeClick={handleScheduleTimeClick}
@@ -78,19 +154,14 @@ const ScheduleTableItem = memo(
     );
   },
   (prevProps, nextProps) => {
+    // 핵심! schedules 참조 비교
     return (
       prevProps.tableId === nextProps.tableId &&
+      prevProps.schedules === nextProps.schedules &&
       prevProps.index === nextProps.index &&
-      prevProps.disabledRemove === nextProps.disabledRemove &&
-      prevProps.schedules.length === nextProps.schedules.length &&
-      prevProps.schedules.every(
-        (s, i) =>
-          s.lecture.id === nextProps.schedules[i]?.lecture.id &&
-          s.day === nextProps.schedules[i]?.day &&
-          s.range[0] === nextProps.schedules[i]?.range[0],
-      )
+      prevProps.disabledRemove === nextProps.disabledRemove
     );
-  },
+  }
 );
 
 export default ScheduleTableItem;
